@@ -7,6 +7,7 @@
 #include "node_v8_platform-inl.h"
 #include "tracing/agent.h"
 #include "util-inl.h"
+#include "v8-fast-api-calls.h"
 
 #include <set>
 #include <string>
@@ -17,6 +18,7 @@ class ExternalReferenceRegistry;
 
 using v8::Array;
 using v8::Context;
+using v8::CFunction;
 using v8::Function;
 using v8::FunctionCallbackInfo;
 using v8::FunctionTemplate;
@@ -113,6 +115,20 @@ void GetEnabledCategories(const FunctionCallbackInfo<Value>& args) {
   }
 }
 
+void IsTraceHTTPEnabled(const FunctionCallbackInfo<Value>& args) {
+  bool isEnabled = *GetTracingAgentWriter()->GetTracingController()->GetCategoryGroupEnabled("node.http") > 0;
+
+  args.GetReturnValue().Set(isEnabled);
+}
+
+bool FastIsTraceHTTPEnabled(Local<Value> receiver) {
+  bool isEnabled = *GetTracingAgentWriter()->GetTracingController()->GetCategoryGroupEnabled("node.http") > 0;
+
+  return isEnabled;
+}
+
+CFunction fast_is_trace_http_enabled_(CFunction::Make(FastIsTraceHTTPEnabled));
+
 static void SetTraceCategoryStateUpdateHandler(
     const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
@@ -127,6 +143,8 @@ void NodeCategorySet::Initialize(Local<Object> target,
   Environment* env = Environment::GetCurrent(context);
   Isolate* isolate = env->isolate();
 
+  SetFastMethodNoSideEffect(
+      context, target, "isTraceHTTPEnabled", IsTraceHTTPEnabled, &fast_is_trace_http_enabled_);
   SetMethod(context, target, "getEnabledCategories", GetEnabledCategories);
   SetMethod(context,
             target,
@@ -163,6 +181,9 @@ void NodeCategorySet::RegisterExternalReferences(
   registry->Register(NodeCategorySet::New);
   registry->Register(NodeCategorySet::Enable);
   registry->Register(NodeCategorySet::Disable);
+  registry->Register(IsTraceHTTPEnabled);
+  registry->Register(FastIsTraceHTTPEnabled);
+  registry->Register(fast_is_trace_http_enabled_.GetTypeInfo());
 }
 
 }  // namespace node

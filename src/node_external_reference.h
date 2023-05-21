@@ -21,6 +21,8 @@ using CFunctionCallbackWithBool = void (*)(v8::Local<v8::Object> receiver,
                                            bool);
 using CFunctionCallbackWithStrings =
     bool (*)(v8::Local<v8::Value>, const v8::FastOneByteString& input);
+using CFunctionCallbackReturnBool =
+    bool (*)(v8::Local<v8::Value>);
 
 // This class manages the external references from the V8 heap
 // to the C++ addresses in Node.js.
@@ -32,6 +34,7 @@ class ExternalReferenceRegistry {
   V(CFunctionCallback)                                                         \
   V(CFunctionCallbackWithOneByteString)                                        \
   V(CFunctionCallbackReturnDouble)                                             \
+  V(CFunctionCallbackReturnBool)                                             \
   V(CFunctionCallbackWithInt64)                                                \
   V(CFunctionCallbackWithBool)                                                 \
   V(CFunctionCallbackWithStrings)                                              \
