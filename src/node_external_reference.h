@@ -110,7 +110,6 @@ class ExternalReferenceRegistry {
   V(string_decoder)                                                            \
   V(stream_wrap)                                                               \
   V(signal_wrap)                                                               \
-  V(tracing)                                                                   \
   V(trace_events)                                                              \
   V(timers)                                                                    \
   V(types)                                                                     \

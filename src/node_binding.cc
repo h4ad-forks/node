@@ -69,7 +69,6 @@
   V(task_queue)                                                                \
   V(tcp_wrap)                                                                  \
   V(timers)                                                                    \
-  V(tracing)                                                                   \
   V(trace_events)                                                              \
   V(tty_wrap)                                                                  \
   V(types)                                                                     \

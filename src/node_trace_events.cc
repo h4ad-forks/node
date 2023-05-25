@@ -7,6 +7,7 @@
 #include "node_v8_platform-inl.h"
 #include "tracing/agent.h"
 #include "util-inl.h"
+#include "v8.h"
 
 #include <set>
 #include <string>
@@ -16,6 +17,7 @@ namespace node {
 class ExternalReferenceRegistry;
 
 using v8::Array;
+using v8::ArrayBuffer;
 using v8::Context;
 using v8::Function;
 using v8::FunctionCallbackInfo;
@@ -25,6 +27,7 @@ using v8::Local;
 using v8::NewStringType;
 using v8::Object;
 using v8::String;
+using v8::Uint8Array;
 using v8::Value;
 
 class NodeCategorySet : public BaseObject {
@@ -126,6 +129,28 @@ void NodeCategorySet::Initialize(Local<Object> target,
                 void* priv) {
   Environment* env = Environment::GetCurrent(context);
   Isolate* isolate = env->isolate();
+
+  // Get the pointer of the memory for the flag that
+  // store if trace is enabled for http the pointer will
+  // always be the same and if the category does not exist
+  // it creates: https://github.com/nodejs/node/blob/6bbf2a57fcf33266c5859497f8cc32e1389a358a/deps/v8/src/libplatform/tracing/tracing-controller.cc#L322-L342
+  uint8_t* http_flag_pointer = const_cast<uint8_t*>(
+    TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED("node.http"));
+
+  // NO_OP deleter
+  // the idea of this chunk of code is to construct
+  auto nop_deleter = [](void*, size_t, void*) {};
+  auto backing_store = v8::ArrayBuffer::NewBackingStore(
+    http_flag_pointer, 1, nop_deleter, nullptr);
+  v8::Local<ArrayBuffer> array_buffer = v8::ArrayBuffer::New(
+    isolate, std::move(backing_store));
+  v8::Local<Uint8Array> uint8Array = v8::Uint8Array::New(array_buffer, 0, 1);
+
+  target
+      ->Set(context,
+            FIXED_ONE_BYTE_STRING(isolate, "tracingCategories"),
+            uint8Array)
+      .Check();
 
   SetMethod(context, target, "getEnabledCategories", GetEnabledCategories);
   SetMethod(context,
