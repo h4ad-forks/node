@@ -26,7 +26,7 @@ const configs = {
 };
 
 const options = {
-  flags: ['--expose-internals'],
+  flags: ['--expose-internals', '--no-deprecation'],
 };
 
 const bench = common.createBenchmark(main, configs, options);
