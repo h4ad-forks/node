@@ -55,6 +55,35 @@ enum class FsStatFsOffset {
 constexpr size_t kFsStatFsBufferLength =
     static_cast<size_t>(FsStatFsOffset::kFsStatFsFieldsNumber);
 
+// the possible file extensions that should be tested
+// 0-6: when packageConfig.main is defined
+// 7-9: when packageConfig.main is NOT defined,
+//      or when the previous case didn't found the file
+const std::vector<std::string> legacy_main_extensions = {"",
+                                                         ".js",
+                                                         ".json",
+                                                         ".node",
+                                                         "/index.js",
+                                                         "/index.json",
+                                                         "/index.node",
+                                                         ".js",
+                                                         ".json",
+                                                         ".node"};
+// define the final index of the algorithm resolution
+// when packageConfig.main is defined.
+const uint8_t legacy_main_extensions_with_main_end = 7;
+// define the final index of the algorithm resolution
+// when packageConfig.main is NOT defined
+const uint8_t legacy_main_extensions_package_fallback_end = 10;
+
+enum class FilePathIsFileReturnType {
+  kIsFile = 0,
+  kIsNotFile,
+  kThrowInsufficientPermissions
+};
+
+enum LegacyMainResolveReturnType { kInvalidUrl = -2, kModuleNotFound = -1 };
+
 class BindingData : public SnapshotableObject {
  public:
   struct InternalFieldInfo : public node::InternalFieldInfoBase {
