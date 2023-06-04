@@ -4,6 +4,7 @@
 #include "node_errors.h"
 #include "node_external_reference.h"
 #include "node_i18n.h"
+#include "node_metadata.h"
 #include "util-inl.h"
 #include "v8-fast-api-calls.h"
 #include "v8.h"
@@ -115,6 +116,126 @@ void BindingData::DomainToUnicode(const FunctionCallbackInfo<Value>& args) {
                                                 NewStringType::kNormal,
                                                 result.length())
                                 .ToLocalChecked());
+}
+
+bool FileURLToPathImpl(Environment* env,
+                              const ada::url_aggregator& file_url,
+                              std::string& result_file_path) {
+  if (file_url.type != ada::scheme::FILE) {
+    env->isolate()->ThrowException(ERR_INVALID_URL_SCHEME(env->isolate()));
+
+    return false;
+  }
+
+  std::string_view pathname = file_url.get_pathname();
+#ifdef _WIN_32
+  std::string pathname_escaped_slash;
+
+  for (size_t i = 0; (i + 2) < pathname.size(); i++) {
+    pathname_escaped_slash += pathname[i];
+
+    if (pathname[i] == '\\') pathname_escaped_slash += '\\';
+
+    if (pathname[i] != '%') continue;
+
+    char third = pathname[i + 2] | 0x20;
+
+    bool is_slash = pathname[i + 1] == '2' && third == 102;         // 2f 2F /
+    bool is_forward_slash = pathname[i + 1] == '5' && third == 99;  // 5c 5C \
+
+    if (!is_slash && !is_forward_slash) continue;
+
+    env->isolate()->ThrowException(ERR_INVALID_FILE_URL_PATH(
+        env->isolate(),
+        "File URL path must not include encoded \\ or / characters"));
+
+    return false;
+  }
+
+  std::string decoded_pathname = ada::unicode::percent_decode(
+      std::string_view(pathname_escaped_slash), pathname_escaped_slash.size());
+
+  if (hostname.size() > 0) {
+    // If hostname is set, then we have a UNC path
+    // Pass the hostname through domainToUnicode just in case
+    // it is an IDN using punycode encoding. We do not need to worry
+    // about percent encoding because the URL parser will have
+    // already taken care of that for us. Note that this only
+    // causes IDNs with an appropriate `xn--` prefix to be decoded.
+    *result_file_path =
+        "\\\\" + ada::unicode::to_unicode(hostname) + decoded_pathname;
+
+    return true;
+  }
+
+  char letter = decoded_pathname[1] | 0x20;
+  char sep = decoded_pathname[2];
+
+  // a..z A..Z
+  if (letter < 'a' || letter > 'z' || sep != ':') {
+    env->isolate()->ThrowException(ERR_INVALID_FILE_URL_PATH(
+        env->isolate(), "File URL path must be absolute"));
+
+    return false;
+  }
+
+  result_file_path = decoded_pathname.substr(1);
+
+  return true;
+#else
+  std::string_view hostname = file_url.get_hostname();
+
+  if (hostname.size() > 0) {
+    std::string error_message =
+        std::string("File URL host must be \"localhost\" or empty on ") +
+        std::string(per_process::metadata.platform);
+    env->isolate()->ThrowException(
+        ERR_INVALID_FILE_URL_HOST(env->isolate(), error_message.c_str()));
+
+    return false;
+  }
+
+  for (size_t i = 0; (i + 2) < pathname.size(); i++) {
+    if (pathname[i] == '%' && pathname[i + 1] == '2' &&
+        (pathname[i + 2] | 0x20) == 102) {
+      env->isolate()->ThrowException(ERR_INVALID_FILE_URL_PATH(
+          env->isolate(),
+          "File URL path must not include encoded / characters"));
+
+      return false;
+    }
+  }
+
+  result_file_path = ada::unicode::percent_decode(pathname, pathname.size());
+
+  return true;
+#endif
+}
+
+void BindingData::FileURLToPath(const FunctionCallbackInfo<Value>& args) {
+  CHECK_GE(args.Length(), 1);
+  CHECK(args[0]->IsString());  // url
+
+  Environment* env = Environment::GetCurrent(args);
+
+  Utf8Value input(env->isolate(), args[0]);
+
+  auto file_url = ada::parse<ada::url_aggregator>(input.ToStringView());
+
+  if (!file_url) {
+    env->isolate()->ThrowException(ERR_INVALID_URL(env->isolate()));
+
+    return;
+  }
+
+  std::string result_file_path;
+
+  if (!FileURLToPathImpl(env, file_url.value(), result_file_path))
+    return;
+
+  args.GetReturnValue().Set(
+      ToV8Value(env->context(), result_file_path, env->isolate())
+          .ToLocalChecked());
 }
 
 void BindingData::CanParse(const FunctionCallbackInfo<Value>& args) {
@@ -321,6 +442,7 @@ void BindingData::CreatePerIsolateProperties(IsolateData* isolate_data,
   Isolate* isolate = isolate_data->isolate();
   SetMethodNoSideEffect(isolate, target, "domainToASCII", DomainToASCII);
   SetMethodNoSideEffect(isolate, target, "domainToUnicode", DomainToUnicode);
+  SetMethodNoSideEffect(isolate, target, "fileURLToPath", FileURLToPath);
   SetMethodNoSideEffect(isolate, target, "format", Format);
   SetMethod(isolate, target, "parse", Parse);
   SetMethod(isolate, target, "update", Update);
@@ -344,6 +466,7 @@ void BindingData::RegisterExternalReferences(
   registry->Register(Parse);
   registry->Register(Update);
   registry->Register(CanParse);
+  registry->Register(FileURLToPath);
   registry->Register(FastCanParse);
   registry->Register(fast_can_parse_.GetTypeInfo());
 }

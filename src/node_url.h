@@ -47,6 +47,7 @@ class BindingData : public SnapshotableObject {
 
   static void DomainToASCII(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void DomainToUnicode(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void FileURLToPath(const v8::FunctionCallbackInfo<v8::Value>& args);
 
   static void CanParse(const v8::FunctionCallbackInfo<v8::Value>& args);
   static bool FastCanParse(v8::Local<v8::Value> receiver,
@@ -74,6 +75,9 @@ class BindingData : public SnapshotableObject {
   static v8::CFunction fast_can_parse_;
 };
 
+bool FileURLToPathImpl(Environment* env,
+                              const ada::url_aggregator& file_url,
+                              std::string& result_file_path);
 std::string FromFilePath(const std::string_view file_path);
 
 }  // namespace url
