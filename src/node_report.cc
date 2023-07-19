@@ -22,6 +22,7 @@
 #include <ctime>
 #include <cwctype>
 #include <fstream>
+#include <sys/time.h>
 
 constexpr int NODE_REPORT_VERSION = 3;
 constexpr int NANOS_PER_SEC = 1000 * 1000 * 1000;
@@ -82,6 +83,27 @@ static void PrintRelease(JSONWriter* writer);
 static void PrintCpuInfo(JSONWriter* writer);
 static void PrintNetworkInterfaceInfo(JSONWriter* writer);
 
+const std::string currentDateTime() {
+  timeval curTime;
+  gettimeofday(&curTime, NULL);
+  int milli = curTime.tv_usec / 1000;
+
+  char buffer [80];
+  strftime(buffer, 80, "%Y-%m-%d %H:%M:%S", localtime(&curTime.tv_sec));
+
+  char currentTime[84] = "";
+  sprintf(currentTime, "%s:%03d", buffer, milli);
+
+  return std::string(currentTime);
+};
+
+void PrintNow(const std::string& tag) {
+  std::cout << tag;
+  std::cout << " - ";
+  std::cout << currentDateTime();
+  std::cout << std::endl;
+}
+
 // Internal function to coordinate and write the various
 // sections of the report to the supplied stream
 static void WriteNodeReport(Isolate* isolate,
@@ -92,14 +114,17 @@ static void WriteNodeReport(Isolate* isolate,
                             std::ostream& out,
                             Local<Value> error,
                             bool compact) {
+  PrintNow("init");
   // Obtain the current time and the pid.
   TIME_TYPE tm_struct;
   DiagnosticFilename::LocalTime(&tm_struct);
   uv_pid_t pid = uv_os_getpid();
+  PrintNow("after get pid");
 
   // Save formatting for output stream.
   std::ios old_state(nullptr);
   old_state.copyfmt(out);
+  PrintNow("after copyfmt");
 
   // File stream opened OK, now start printing the report content:
   // the title and header information (event, filename, timestamp and pid)
@@ -115,6 +140,7 @@ static void WriteNodeReport(Isolate* isolate,
   else
     writer.json_keyvalue("filename", JSONWriter::Null{});
 
+  PrintNow("after filename");
   // Report dump event and module load date/time stamps
   char timebuf[64];
 #ifdef _WIN32
@@ -140,12 +166,14 @@ static void WriteNodeReport(Isolate* isolate,
            tm_struct.tm_sec);
   writer.json_keyvalue("dumpEventTime", timebuf);
 #endif
+  PrintNow("after dumpEventTime");
 
   uv_timeval64_t ts;
   if (uv_gettimeofday(&ts) == 0) {
     writer.json_keyvalue("dumpEventTimeStamp",
                          std::to_string(ts.tv_sec * 1000 + ts.tv_usec / 1000));
   }
+  PrintNow("after dumpEventTimeStamp");
 
   // Report native process ID
   writer.json_keyvalue("processId", pid);
@@ -154,6 +182,7 @@ static void WriteNodeReport(Isolate* isolate,
   else
     writer.json_keyvalue("threadId", JSONWriter::Null{});
 
+  PrintNow("after threadId");
   {
     // Report the process cwd.
     char buf[PATH_MAX_BYTES];
@@ -161,6 +190,7 @@ static void WriteNodeReport(Isolate* isolate,
     if (uv_cwd(buf, &cwd_size) == 0)
       writer.json_keyvalue("cwd", buf);
   }
+  PrintNow("after cwd");
 
   // Report out the command line.
   if (!per_process::cli_options->cmdline.empty()) {
@@ -170,10 +200,12 @@ static void WriteNodeReport(Isolate* isolate,
     }
     writer.json_arrayend();
   }
+  PrintNow("after commandLine");
 
   // Report Node.js and OS version information
   PrintVersionInformation(&writer);
   writer.json_objectend();
+  PrintNow("after PrintVersionInformation");
 
   if (isolate != nullptr) {
     writer.json_objectstart("javascriptStack");
@@ -185,12 +217,15 @@ static void WriteNodeReport(Isolate* isolate,
     // Report V8 Heap and Garbage Collector information
     PrintGCStatistics(&writer, isolate);
   }
+  PrintNow("after javascriptStack");
 
   // Report native stack backtrace
   PrintNativeStack(&writer);
+  PrintNow("after PrintNativeStack");
 
   // Report OS and current thread resource usage
   PrintResourceUsage(&writer);
+  PrintNow("after PrintResourceUsage");
 
   writer.json_arraystart("libuv");
   if (env != nullptr) {
@@ -208,6 +243,7 @@ static void WriteNodeReport(Isolate* isolate,
     writer.json_keyvalue("loopIdleTimeSeconds", 1.0 * idle_time / 1e9);
     writer.json_end();
   }
+  PrintNow("after libuv");
 
   writer.json_arrayend();
 
@@ -239,14 +275,17 @@ static void WriteNodeReport(Isolate* isolate,
       writer.json_element(JSONWriter::ForeignJSON { worker_info });
   }
   writer.json_arrayend();
+  PrintNow("after workers");
 
   // Report operating system information
   PrintSystemInformation(&writer);
+  PrintNow("after PrintSystemInformation");
 
   writer.json_objectend();
 
   // Restore output stream formatting.
   out.copyfmt(old_state);
+  PrintNow("after copyfmt");
 }
 
 // Report Node.js version, OS version and machine information.
@@ -277,11 +316,15 @@ static void PrintVersionInformation(JSONWriter* writer) {
   writer->json_keyvalue("arch", per_process::metadata.arch);
   writer->json_keyvalue("platform", per_process::metadata.platform);
 
+  PrintNow("after platform");
+
   // Report deps component versions
   PrintComponentVersions(writer);
+  PrintNow("after PrintComponentVersions");
 
   // Report release metadata.
   PrintRelease(writer);
+  PrintNow("after PrintRelease");
 
   // Report operating system and machine information
   uv_utsname_t os_info;
@@ -292,22 +335,30 @@ static void PrintVersionInformation(JSONWriter* writer) {
     writer->json_keyvalue("osVersion", os_info.version);
     writer->json_keyvalue("osMachine", os_info.machine);
   }
+  PrintNow("after osMachine");
 
   PrintCpuInfo(writer);
+  PrintNow("after PrintCpuInfo");
   PrintNetworkInterfaceInfo(writer);
+  PrintNow("after PrintNetworkInterfaceInfo");
 
   char host[UV_MAXHOSTNAMESIZE];
   size_t host_size = sizeof(host);
 
   if (uv_os_gethostname(host, &host_size) == 0)
     writer->json_keyvalue("host", host);
+
+  PrintNow("after uv_os_gethostname");
 }
 
 // Report CPU info
 static void PrintCpuInfo(JSONWriter* writer) {
   uv_cpu_info_t* cpu_info;
   int count;
+  PrintNow("on PrintCpuInfo");
   if (uv_cpu_info(&cpu_info, &count) == 0) {
+    PrintNow("after uv_cpu_info");
+
     writer->json_arraystart("cpus");
     for (int i = 0; i < count; i++) {
       writer->json_start();
@@ -320,8 +371,11 @@ static void PrintCpuInfo(JSONWriter* writer) {
       writer->json_keyvalue("irq", cpu_info[i].cpu_times.irq);
       writer->json_end();
     }
+    PrintNow("after cpu loop");
+
     writer->json_arrayend();
     uv_free_cpu_info(cpu_info, count);
+    PrintNow("after uv_free_cpu_info");
   }
 }
 

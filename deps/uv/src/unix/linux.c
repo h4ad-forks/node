@@ -50,6 +50,7 @@
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
+#include <sys/time.h>
 
 #ifndef __NR_io_uring_setup
 # define __NR_io_uring_setup 425
@@ -1469,8 +1470,25 @@ int uv_uptime(double* uptime) {
   return 0;
 }
 
+long long timeInMilliseconds(void) {
+    struct timeval tv;
+
+    gettimeofday(&tv,NULL);
+    return (((long long)tv.tv_sec)*1000)+(tv.tv_usec/1000);
+}
+
+void PrintNow(char* tag) {
+  struct timespec start;
+  clock_gettime(CLOCK_MONOTONIC_RAW, &start);
+
+  printf("%s", tag);
+  printf(" - ");
+  printf("%lld", timeInMilliseconds());
+  printf("\n");
+}
 
 int uv_cpu_info(uv_cpu_info_t** ci, int* count) {
+  PrintNow("init");
 #if defined(__PPC__)
   static const char model_marker[] = "cpu\t\t: ";
 #elif defined(__arm__)
@@ -1508,6 +1526,9 @@ int uv_cpu_info(uv_cpu_info_t** ci, int* count) {
     unsigned long long freq, user, nice, sys, idle, irq;
     unsigned model;
   };
+  printf("model name: %s\n", model_marker);
+
+  PrintNow("after defines");
   FILE* fp;
   char* p;
   int found;
@@ -1528,22 +1549,29 @@ int uv_cpu_info(uv_cpu_info_t** ci, int* count) {
   char models[8][64];
   char buf[1024];
 
+  PrintNow("after buffers");
+
   memset(bitmap, 0, sizeof(bitmap));
   memset(models, 0, sizeof(models));
   snprintf(*models, sizeof(*models), "unknown");
   maxcpu = 0;
 
+  PrintNow("after snprintf");
+
   cpus = uv__calloc(ARRAY_SIZE(*cpus), sizeof(**cpus));
+  PrintNow("after uv__calloc");
   if (cpus == NULL)
     return UV_ENOMEM;
 
   fp = uv__open_file("/proc/stat");
+  PrintNow("after uv__open_file");
   if (fp == NULL) {
     uv__free(cpus);
     return UV__ERR(errno);
   }
 
   fgets(buf, sizeof(buf), fp);  /* Skip first line. */
+  PrintNow("after fgets");
 
   for (;;) {
     memset(&t, 0, sizeof(t));
@@ -1567,22 +1595,39 @@ int uv_cpu_info(uv_cpu_info_t** ci, int* count) {
       maxcpu = cpu + 1;
   }
 
+  PrintNow("after for ;;");
+
   fclose(fp);
 
   fp = uv__open_file("/proc/cpuinfo");
+  PrintNow("after uv__open_file /proc/cpuinfo");
+
   if (fp == NULL)
     goto nocpuinfo;
 
   for (;;) {
-    if (1 != fscanf(fp, "processor\t: %u\n", &cpu))
+    PrintNow("inside for");
+
+    if (1 != fscanf(fp, "processor\t: %u\n", &cpu)) {
+      fgets(buf, sizeof(buf), fp);
+      printf("buffer: %s", buf);
+
+      PrintNow("parse error");
       break;  /* Parse error. */
+    }
 
     found = 0;
-    while (!found && fgets(buf, sizeof(buf), fp))
+    while (!found && fgets(buf, sizeof(buf), fp)) {
       found = !strncmp(buf, model_marker, sizeof(model_marker) - 1);
+    }
 
-    if (!found)
+    if (!found) {
+      PrintNow("not found");
+
       goto next;
+    }
+
+    PrintNow("found");
 
     p = buf + sizeof(model_marker) - 1;
     n = (int) strcspn(p, "\n");
@@ -1616,10 +1661,16 @@ next:
         break;
   }
 
+  PrintNow("after for ;;");
+
   fclose(fp);
   fp = NULL;
 
 nocpuinfo:
+
+  PrintNow("on nocpuinfo");
+  printf("cpu: %d\n", cpu);
+  printf("maxcpu: %d\n", maxcpu);
 
   n = 0;
   for (cpu = 0; cpu < maxcpu; cpu++) {
@@ -1639,6 +1690,8 @@ nocpuinfo:
     fp = NULL;
   }
 
+  PrintNow("after for maxcpu");
+
   size = n * sizeof(**ci) + sizeof(models);
   *ci = uv__malloc(size);
   *count = 0;
@@ -1648,8 +1701,12 @@ nocpuinfo:
     return UV_ENOMEM;
   }
 
+  PrintNow("after uv__free");
+
   *count = n;
   p = memcpy(*ci + n, models, sizeof(models));
+
+  PrintNow("after memcpy");
 
   i = 0;
   for (cpu = 0; cpu < maxcpu; cpu++) {
@@ -1674,7 +1731,11 @@ nocpuinfo:
     };
   }
 
+  PrintNow("after for cpu < maxcpu");
+
   uv__free(cpus);
+
+  PrintNow("after uv__free");
 
   return 0;
 }
